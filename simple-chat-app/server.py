@@ -1,4 +1,5 @@
 #!/bin/python
+import csv
 import select
 import signal
 import os
@@ -12,10 +13,15 @@ daemon_quit = False
 HEADER_LENGTH = 10
 IP = "127.0.0.1"
 
+"""
+AF_INET: address domain of the socket
+SOCK_STREAM: type of socket, SOCK_STREAM means that data or characters are read in a continuous flow.
+"""
 server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 sockets_list = []
 clients = {}
+accounts_db = {"john": 23423}
 
 
 # Do not modify or remove this handler
@@ -24,8 +30,21 @@ def quit_gracefully(signum, frame):
     daemon_quit = True
 
 
+def create_account():
+    pass
+
+
+def confirm_login(username, password):
+    pass
+
+
 def setup_socket(port):
-    server_socket.bind((IP, port))
+    try:
+        server_socket.bind((IP, port))
+    except socket.error as e:
+        print(str(e))
+
+    print("Waiting for a connection...")
     server_socket.listen()
 
     sockets_list.append(server_socket)
@@ -49,7 +68,11 @@ def run():
     # Do not modify or remove this function call
     signal.signal(signal.SIGINT, quit_gracefully)
 
-    setup_socket(sys.argv[1])
+    if len(sys.argv) != 3:
+        print("Wrong usage. Use script [port number] [configuration]")
+        exit()
+
+    setup_socket(int(sys.argv[1]))
 
     while True:
         read_sockets, _, exception_sockets = select.select(sockets_list, [], sockets_list)
@@ -61,12 +84,21 @@ def run():
                 user = receive_message(client_socket)
                 if user is False:
                     continue
+                # TODO: Check LOGIN message format
 
-                sockets_list.append(client_socket)
+                print(user['data'].decode("utf-8"))
+                # Check if user exists
+                if user['data'].decode("utf-8") not in accounts_db:
+                    # Send RESULT message back to client
+                    result_msg = "RESULT LOGIN :0".encode("utf-8")
+                    result_header = f"{len(result_msg):<{HEADER_LENGTH}}".encode("utf-8")
+                    client_socket.send(result_header + result_msg)
+                else:
+                    sockets_list.append(client_socket)
 
-                clients[client_socket] = user
+                    clients[client_socket] = user
 
-                print(f"Accepted new connection from {client_address[0]}:{client_address[1]} username: {user['data'].decode('utf-8')}")
+                    print(f"Accepted new connection from {client_address[0]}:{client_address[1]} username: {user['data'].decode('utf-8')}")
 
             else:
                 message = receive_message(notified_socket)
