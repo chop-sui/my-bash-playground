@@ -6,7 +6,6 @@ import os
 import sys
 import socket
 
-
 # Use this variable for your loop
 daemon_quit = False
 
@@ -75,53 +74,83 @@ def run():
     setup_socket(int(sys.argv[1]))
 
     while True:
-        read_sockets, _, exception_sockets = select.select(sockets_list, [], sockets_list)
+        ready_to_read, ready_to_write, in_error = select.select(sockets_list, [], [], 0)
 
-        for notified_socket in read_sockets:
+        for notified_socket in ready_to_read:
+            # If a connection request is received
             if notified_socket == server_socket:
                 client_socket, client_address = server_socket.accept()
+                sockets_list.append(client_socket)
+                clients[client_socket] = client_address
+                print(f"Accepted new connection from client {client_address[0]}:{client_address[1]}")
 
-                user = receive_message(client_socket)
-                if user is False:
-                    continue
-                # TODO: Check LOGIN message format
-
-                print(user['data'].decode("utf-8"))
-                # Check if user exists
-                if user['data'].decode("utf-8") not in accounts_db:
-                    # Send RESULT message back to client
-                    result_msg = "RESULT LOGIN :0".encode("utf-8")
-                    result_header = f"{len(result_msg):<{HEADER_LENGTH}}".encode("utf-8")
-                    client_socket.send(result_header + result_msg)
-                else:
-                    sockets_list.append(client_socket)
-
-                    clients[client_socket] = user
-
-                    print(f"Accepted new connection from {client_address[0]}:{client_address[1]} username: {user['data'].decode('utf-8')}")
-
+            # If a message is received from a client, not a new connection
             else:
-                message = receive_message(notified_socket)
+                try:
+                    received_msg = receive_message(notified_socket)
 
-                if message is False:
-                    print(f"Closed connection from {clients[notified_socket]['data'].decode('utf-8')}")
-                    sockets_list.remove(notified_socket)
-                    del clients[notified_socket]
+                    if received_msg is False:
+                        print(f"Closed connection from {clients[notified_socket][0]}:{clients[notified_socket][1]}")
+                        sockets_list.remove(notified_socket)
+                        del clients[notified_socket]
+                        broadcast(server_socket, notified_socket, f"Client {client_address[0]}:{client_address[1]} is offline".encode("utf-8"))
+                        continue
+
+                    received_msg = received_msg['data'].decode("utf-8")
+                    client_address = clients[notified_socket]
+                    print(f"Received message from client {client_address[0]}:{client_address[1]} > {received_msg}")
+
+                    if received_msg.split(' ')[0].startswith("LOGIN"):
+                        username = received_msg.split(' ')[1]
+                        password = received_msg.split(' ')[2]
+                        # Check if user exists
+                        if username not in accounts_db:
+                            # Send RESULT message back to client
+                            result_msg = "RESULT LOGIN :0".encode("utf-8")
+                            result_header = f"{len(result_msg):<{HEADER_LENGTH}}".encode("utf-8")
+                            notified_socket.send(result_header + result_msg)
+                            continue
+                        else:
+                            clients[notified_socket] = username
+                            result_msg = "RESULT LOGIN :1".encode("utf-8")
+                            result_header = f"{len(result_msg):<{HEADER_LENGTH}}".encode("utf-8")
+                            notified_socket.send(result_header + result_msg)
+                            print(f"Client {username} logged in")
+
+                    elif received_msg.split(' ')[0].startswith("REGISTER"):
+                        username = received_msg.split(' ')[1]
+                        password = received_msg.split(' ')[2]
+                        accounts_db[username] = password
+                        result_msg = "RESULT REGISTER :1".encode("utf-8")
+                        result_header = f"{len(result_msg):<{HEADER_LENGTH}}".encode("utf-8")
+                        notified_socket.send(result_header + result_msg)
+                        print(f"New client {username} registered")
+
+                    else:
+                        result_msg = "INVALID REQUEST".encode("utf-8")
+                        result_header = f"{len(result_msg):<{HEADER_LENGTH}}".encode("utf-8")
+                        notified_socket.send(result_header + result_msg)
+
+                    # broadcast(server_socket, notified_socket,
+                    #           user['header'] + user['data'] + received_msg['header'] + received_msg['data'])
+
+
+                except:
+                    broadcast(server_socket, notified_socket, f"Client {client_address[0]}:{client_address[1]} is offline")
                     continue
 
-                user = clients[notified_socket]
-                print(f"Received message from {user['data'].decode('utf-8')}: {message['data'].decode('utf-8')}")
 
-                for client_socket in clients:
-                    if client_socket != notified_socket:
-                        client_socket.send(user['header'] + user['data'] + message['header'] + message['data'])
-
-        for notified_socket in exception_sockets:
-            sockets_list.remove(notified_socket)
-            del clients[notified_socket]
+def broadcast(server_sock, sock, message):
+    for s in sockets_list:
+        if s != server_sock and s != sock:
+            try:
+                message_header = f"{len(message):<{HEADER_LENGTH}}".encode("utf-8")
+                s.send(message_header + message)
+            except:
+                s.close()
+                if s in sockets_list:
+                    sockets_list.remove(s)
 
 
 if __name__ == '__main__':
     run()
-
-

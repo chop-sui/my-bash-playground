@@ -8,56 +8,57 @@ HEADER_LENGTH = 10
 IP = "127.0.0.1"
 PORT = 1234
 
-# my_username = input("Enter your login credentials (format: LOGIN :USERNAME :PASSWORD):")
-client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-client_socket.connect((IP, PORT))
-client_socket.setblocking(False)
 
-def parse_input(msg):
-    args = msg.split(' ')
+def chat_client():
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    client_socket.connect((IP, PORT))
 
-    # Check what is args[0] : command
+    print("Connected to server!")
+    sys.stdout.write("Enter command: ")
+    sys.stdout.flush()
 
-    if args[0] == "LOGIN":
-        name = args[1][1:]
-        password = args[2][1:]
+    while True:
+        # For Windows OS, select() does not accept objects other than socket
+        # socket_list = [sys.stdin, client_socket]
+        # ready_to_read, ready_to_write, in_error = select.select(socket_list, [], [])
+        # So, we can change the above line as follows
+        ready_to_read, ready_to_write, in_error = select.select((client_socket,), (), (), 1)
+        if msvcrt.kbhit():
+            ready_to_read.append(sys.stdin)
 
-        return name + ' ' + password
+        for sock in ready_to_read:
+            if sock == client_socket:
+                # Incoming message from server
+                result_header = client_socket.recv(HEADER_LENGTH)
+                if not len(result_header):
+                    print("Connection closed by the server")
+                    sys.exit()
+                else:
+                    result_length = int(result_header.decode("utf-8").strip())
+                    result = client_socket.recv(result_length).decode("utf-8")
+
+                    print(f"{result}")
+                    sys.stdout.write("Enter command: ")
+                    sys.stdout.flush()
+
+            else:
+                # user enters a message
+                msg = sys.stdin.readline()
+
+                if msg.startswith("LOGIN") or msg.startswith("REGISTER"):
+                    data = msg.encode("utf-8")
+                    data_header = f"{len(data):<{HEADER_LENGTH}}".encode("utf-8")
+                    client_socket.send(data_header + data)
+                else:
+                    msg = msg.encode("utf-8")
+                    msg_header = f"{len(msg):<{HEADER_LENGTH}}".encode("utf-8")
+                    client_socket.send(msg_header + msg)
+                sys.stdout.write("Enter command: ")
+                sys.stdout.flush()
 
 
-while True:
-    # For Windows OS, select() does not accept objects other than socket
-    # socket_list = [sys.stdin, client_socket]
-    # ready_to_read, ready_to_write, in_error = select.select(socket_list, [], [])
-    # So, we can change the above line as follows
-
-    ready_to_read, ready_to_write, in_error = select.select((client_socket, ), (), (), 1)
-    if msvcrt.kbhit():
-        ready_to_read.append(sys.stdin)
-
-    for sock in ready_to_read:
-        if sock == client_socket:
-            # Incoming message from server
-            result_header = client_socket.recv(HEADER_LENGTH)
-            if not len(result_header):
-                print("Connection closed by the server")
-                sys.exit()
-
-            result_length = int(result_header.decode("utf-8").strip())
-            result = client_socket.recv(result_length).decode("utf-8")
-
-            print(f"{result}")
-            sys.stdout.write("Enter command: "); sys.stdout.flush()
-
-        else:
-            # user enters a message
-            msg = sys.stdin.readline()
-
-            if msg.startswith("LOGIN"):
-                username = parse_input(msg).encode("utf-8")
-                username_header = f"{len(username):<{HEADER_LENGTH}}".encode("utf-8")
-                client_socket.send(username_header + username)
-
+if __name__ == "__main__":
+    sys.exit(chat_client())
 
 # while True:
 #     message = input(f"{my_username} > ")
