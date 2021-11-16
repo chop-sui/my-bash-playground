@@ -1,5 +1,6 @@
 #!/bin/python
 import csv
+import hashlib
 import select
 import signal
 import os
@@ -20,8 +21,8 @@ server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 sockets_list = []
 clients = {}
-accounts_db = {"john": 23423}
-
+accounts_db = {"john": "23423"}
+channels = {} # key: channel name, value: list of clients
 
 # Do not modify or remove this handler
 def quit_gracefully(signum, frame):
@@ -103,29 +104,93 @@ def run():
                     if received_msg.split(' ')[0].startswith("LOGIN"):
                         username = received_msg.split(' ')[1]
                         password = received_msg.split(' ')[2]
-                        # Check if user exists
+                        password = hashlib.sha256(str.encode(password)).hexdigest()
+                        # If user doesn't exist
                         if username not in accounts_db:
                             # Send RESULT message back to client
-                            result_msg = "RESULT LOGIN :0".encode("utf-8")
+                            result_msg = "RESULT LOGIN 0".encode("utf-8")
                             result_header = f"{len(result_msg):<{HEADER_LENGTH}}".encode("utf-8")
                             notified_socket.send(result_header + result_msg)
                             continue
+                        # If user exists
                         else:
-                            clients[notified_socket] = username
-                            result_msg = "RESULT LOGIN :1".encode("utf-8")
-                            result_header = f"{len(result_msg):<{HEADER_LENGTH}}".encode("utf-8")
-                            notified_socket.send(result_header + result_msg)
-                            print(f"Client {username} logged in")
+                            if accounts_db[username] == password:
+                                clients[notified_socket] = username
+                                result_msg = "RESULT LOGIN 1".encode("utf-8")
+                                result_header = f"{len(result_msg):<{HEADER_LENGTH}}".encode("utf-8")
+                                notified_socket.send(result_header + result_msg)
+                                print(f"Client {username} logged in")
+                            else:
+                                result_msg = "RESULT LOGIN 0".encode("utf-8")
+                                result_header = f"{len(result_msg):<{HEADER_LENGTH}}".encode("utf-8")
+                                notified_socket.send(result_header + result_msg)
+                                print(f"Client {username} failed to log in")
 
                     elif received_msg.split(' ')[0].startswith("REGISTER"):
                         username = received_msg.split(' ')[1]
                         password = received_msg.split(' ')[2]
+                        password = hashlib.sha256(str.encode(password)).hexdigest()
                         accounts_db[username] = password
-                        result_msg = "RESULT REGISTER :1".encode("utf-8")
+                        result_msg = "RESULT REGISTER 1".encode("utf-8")
                         result_header = f"{len(result_msg):<{HEADER_LENGTH}}".encode("utf-8")
                         notified_socket.send(result_header + result_msg)
                         print(f"New client {username} registered")
 
+                    elif received_msg.split(' ')[0].startswith("JOIN"):
+                        channel = received_msg.split(' ')[1]
+
+                        # If channel doesn't exist
+                        if channel not in channels:
+                            result_msg = f"RESULT JOIN {channel} 0".encode("utf-8")
+                            result_header = f"{len(result_msg):<{HEADER_LENGTH}}".encode("utf-8")
+                            notified_socket.send(result_header + result_msg)
+                            print(f"Channel {channel} does not exist.")
+                        # If channel exists
+                        else:
+                            # Let client join the channel
+                            channels[channel].append(clients[notified_socket])
+                            result_msg = f"RESULT JOIN {channel} 1".encode("utf-8")
+                            result_header = f"{len(result_msg):<{HEADER_LENGTH}}".encode("utf-8")
+                            notified_socket.send(result_header + result_msg)
+                            print(f"Client joined channel {channel}.")
+
+                    elif received_msg.split(' ')[0].startswith("CREATE"):
+                        channel = received_msg.split(' ')[1]
+
+                        # If channel already exists
+                        if channel in channels:
+                            result_msg = f"RESULT CREATE {channel} 0".encode("utf-8")
+                            result_header = f"{len(result_msg):<{HEADER_LENGTH}}".encode("utf-8")
+                            notified_socket.send(result_header + result_msg)
+                            print(f"Channel {channel} already exists.")
+                        else:
+                            channels[channel] = []
+                            result_msg = f"RESULT JOIN {channel} 1".encode("utf-8")
+                            result_header = f"{len(result_msg):<{HEADER_LENGTH}}".encode("utf-8")
+                            notified_socket.send(result_header + result_msg)
+                            print(f"Created channel {channel}.")
+
+                    elif received_msg.split(' ')[0].startswith("SAY"):
+                        channel = received_msg.split(' ')[1]
+                        message = received_msg.split(' ')[2]
+                        print(channel)
+                        print(message)
+
+                        # If user is not in the channel
+                        if clients[notified_socket] not in channels[channel]:
+                            result_msg = f"You have not joined {channel}".encode("utf-8")
+                            result_header = f"{len(result_msg):<{HEADER_LENGTH}}".encode("utf-8")
+                            notified_socket.send(result_header + result_msg)
+                            print(f"Client failed to join channel {channel}.")
+                        else:
+                            result_msg = f"RECV {client_address[0]}:{client_address[1]} {channel} {message}".encode("utf-8")
+                            result_header = f"{len(result_msg):<{HEADER_LENGTH}}".encode("utf-8")
+                            notified_socket.send(result_header + result_msg)
+                            # broadcast(server_socket, notified_socket, message.encode("utf-8"))
+                    elif received_msg == "CHANNELS":
+                        result_msg = str(channels.values).encode("utf-8")
+                        result_header = f"{len(result_msg):<{HEADER_LENGTH}}".encode("utf-8")
+                        notified_socket.send(result_header + result_msg)
                     else:
                         result_msg = "INVALID REQUEST".encode("utf-8")
                         result_header = f"{len(result_msg):<{HEADER_LENGTH}}".encode("utf-8")
@@ -134,9 +199,8 @@ def run():
                     # broadcast(server_socket, notified_socket,
                     #           user['header'] + user['data'] + received_msg['header'] + received_msg['data'])
 
-
-                except:
-                    broadcast(server_socket, notified_socket, f"Client {client_address[0]}:{client_address[1]} is offline")
+                except Exception as e:
+                    broadcast(server_socket, notified_socket, f"Client {client_address[0]}:{client_address[1]} is offline".encode("utf-8"))
                     continue
 
 

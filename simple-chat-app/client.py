@@ -45,10 +45,12 @@ def chat_client():
                 # user enters a message
                 msg = sys.stdin.readline()
 
-                if msg.startswith("LOGIN") or msg.startswith("REGISTER"):
+                if msg.startswith("LOGIN") or msg.startswith("REGISTER") or msg.startswith("JOIN") or msg.startswith(
+                        "CREATE") or msg.startswith("SAY") or msg.startswith("CHANNELS"):
                     data = msg.encode("utf-8")
                     data_header = f"{len(data):<{HEADER_LENGTH}}".encode("utf-8")
                     client_socket.send(data_header + data)
+
                 else:
                     msg = msg.encode("utf-8")
                     msg_header = f"{len(msg):<{HEADER_LENGTH}}".encode("utf-8")
@@ -93,4 +95,3 @@ if __name__ == "__main__":
 #     except Exception as e:
 #         print('General error', str(e))
 #         sys.exit()
-
