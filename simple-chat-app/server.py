@@ -10,7 +10,7 @@ import socket
 # Use this variable for your loop
 daemon_quit = False
 
-HEADER_LENGTH = 10
+HEADER_LENGTH = 2048
 IP = "127.0.0.1"
 
 """
@@ -57,8 +57,9 @@ def receive_message(client_socket):
         if not len(message_header):
             return False
 
-        message_length = int(message_header.decode("utf-8").strip())
-        return {"header": message_header, "data": client_socket.recv(message_length)}
+        # message_length = int(message_header.decode("utf-8").strip())
+        # print(message_header.decode("utf-8"))
+        return {"header": message_header, "data": message_header.decode("utf-8")}
 
     except:
         return False
@@ -68,7 +69,7 @@ def run():
     # Do not modify or remove this function call
     signal.signal(signal.SIGINT, quit_gracefully)
 
-    if len(sys.argv) != 3:
+    if len(sys.argv) > 3:
         print("Wrong usage. Use script [port number] [configuration]")
         exit()
 
@@ -97,7 +98,7 @@ def run():
                         broadcast(server_socket, notified_socket, f"Client {client_address[0]}:{client_address[1]} is offline".encode("utf-8"))
                         continue
 
-                    received_msg = received_msg['data'].decode("utf-8")
+                    received_msg = received_msg['data']
                     client_address = clients[notified_socket]
                     print(f"Received message from client {client_address[0]}:{client_address[1]} > {received_msg}")
 
@@ -110,20 +111,20 @@ def run():
                             # Send RESULT message back to client
                             result_msg = "RESULT LOGIN 0".encode("utf-8")
                             result_header = f"{len(result_msg):<{HEADER_LENGTH}}".encode("utf-8")
-                            notified_socket.send(result_header + result_msg)
+                            notified_socket.send(result_msg)
                             continue
                         # If user exists
                         else:
                             if accounts_db[username] == password:
                                 clients[notified_socket] = username
-                                result_msg = "RESULT LOGIN 1".encode("utf-8")
+                                result_msg = "RESULT LOGIN 1\n".encode("utf-8")
                                 result_header = f"{len(result_msg):<{HEADER_LENGTH}}".encode("utf-8")
-                                notified_socket.send(result_header + result_msg)
+                                notified_socket.send(result_msg)
                                 print(f"Client {username} logged in")
                             else:
-                                result_msg = "RESULT LOGIN 0".encode("utf-8")
+                                result_msg = "RESULT LOGIN 0\n".encode("utf-8")
                                 result_header = f"{len(result_msg):<{HEADER_LENGTH}}".encode("utf-8")
-                                notified_socket.send(result_header + result_msg)
+                                notified_socket.send(result_msg)
                                 print(f"Client {username} failed to log in")
 
                     elif received_msg.split(' ')[0].startswith("REGISTER"):
@@ -131,43 +132,43 @@ def run():
                         password = received_msg.split(' ')[2]
                         password = hashlib.sha256(str.encode(password)).hexdigest()
                         accounts_db[username] = password
-                        result_msg = "RESULT REGISTER 1".encode("utf-8")
+                        result_msg = "RESULT REGISTER 1\n".encode("utf-8")
                         result_header = f"{len(result_msg):<{HEADER_LENGTH}}".encode("utf-8")
-                        notified_socket.send(result_header + result_msg)
+                        notified_socket.send(result_msg)
                         print(f"New client {username} registered")
 
                     elif received_msg.split(' ')[0].startswith("JOIN"):
-                        channel = received_msg.split(' ')[1]
+                        channel = received_msg.split(' ')[1].strip()
 
                         # If channel doesn't exist
                         if channel not in channels:
-                            result_msg = f"RESULT JOIN {channel} 0".encode("utf-8")
+                            result_msg = f"RESULT JOIN {channel} 0\n".encode("utf-8")
                             result_header = f"{len(result_msg):<{HEADER_LENGTH}}".encode("utf-8")
-                            notified_socket.send(result_header + result_msg)
+                            notified_socket.send(result_msg)
                             print(f"Channel {channel} does not exist.")
                         # If channel exists
                         else:
                             # Let client join the channel
                             channels[channel].append(clients[notified_socket])
-                            result_msg = f"RESULT JOIN {channel} 1".encode("utf-8")
+                            result_msg = f"RESULT JOIN {channel} 1\n".encode("utf-8")
                             result_header = f"{len(result_msg):<{HEADER_LENGTH}}".encode("utf-8")
-                            notified_socket.send(result_header + result_msg)
+                            notified_socket.send(result_msg)
                             print(f"Client joined channel {channel}.")
 
                     elif received_msg.split(' ')[0].startswith("CREATE"):
-                        channel = received_msg.split(' ')[1]
+                        channel = received_msg.split(' ')[1].strip()
 
                         # If channel already exists
                         if channel in channels:
-                            result_msg = f"RESULT CREATE {channel} 0".encode("utf-8")
+                            result_msg = f"RESULT CREATE {channel} 0\n".encode("utf-8")
                             result_header = f"{len(result_msg):<{HEADER_LENGTH}}".encode("utf-8")
-                            notified_socket.send(result_header + result_msg)
+                            notified_socket.send(result_msg)
                             print(f"Channel {channel} already exists.")
                         else:
                             channels[channel] = []
-                            result_msg = f"RESULT JOIN {channel} 1".encode("utf-8")
+                            result_msg = f"RESULT CREATE {channel} 1\n".encode("utf-8")
                             result_header = f"{len(result_msg):<{HEADER_LENGTH}}".encode("utf-8")
-                            notified_socket.send(result_header + result_msg)
+                            notified_socket.send(result_msg)
                             print(f"Created channel {channel}.")
 
                     elif received_msg.split(' ')[0].startswith("SAY"):
@@ -180,21 +181,21 @@ def run():
                         if clients[notified_socket] not in channels[channel]:
                             result_msg = f"You have not joined {channel}".encode("utf-8")
                             result_header = f"{len(result_msg):<{HEADER_LENGTH}}".encode("utf-8")
-                            notified_socket.send(result_header + result_msg)
+                            notified_socket.send(result_msg)
                             print(f"Client failed to join channel {channel}.")
                         else:
                             result_msg = f"RECV {client_address[0]}:{client_address[1]} {channel} {message}".encode("utf-8")
                             result_header = f"{len(result_msg):<{HEADER_LENGTH}}".encode("utf-8")
-                            notified_socket.send(result_header + result_msg)
+                            notified_socket.send(result_msg)
                             # broadcast(server_socket, notified_socket, message.encode("utf-8"))
                     elif received_msg == "CHANNELS":
                         result_msg = str(channels.values).encode("utf-8")
                         result_header = f"{len(result_msg):<{HEADER_LENGTH}}".encode("utf-8")
-                        notified_socket.send(result_header + result_msg)
+                        notified_socket.send(result_msg)
                     else:
                         result_msg = "INVALID REQUEST".encode("utf-8")
                         result_header = f"{len(result_msg):<{HEADER_LENGTH}}".encode("utf-8")
-                        notified_socket.send(result_header + result_msg)
+                        notified_socket.send(result_msg)
 
                     # broadcast(server_socket, notified_socket,
                     #           user['header'] + user['data'] + received_msg['header'] + received_msg['data'])
@@ -209,7 +210,7 @@ def broadcast(server_sock, sock, message):
         if s != server_sock and s != sock:
             try:
                 message_header = f"{len(message):<{HEADER_LENGTH}}".encode("utf-8")
-                s.send(message_header + message)
+                s.send(message)
             except:
                 s.close()
                 if s in sockets_list:

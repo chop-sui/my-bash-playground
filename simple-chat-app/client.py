@@ -4,7 +4,7 @@ import errno
 import sys
 import msvcrt
 
-HEADER_LENGTH = 10
+HEADER_LENGTH = 2048
 IP = "127.0.0.1"
 PORT = 1234
 
@@ -34,10 +34,10 @@ def chat_client():
                     print("Connection closed by the server")
                     sys.exit()
                 else:
-                    result_length = int(result_header.decode("utf-8").strip())
-                    result = client_socket.recv(result_length).decode("utf-8")
+                    # result_length = int(result_header.decode("utf-8").strip())
+                    result = result_header.decode("utf-8")
 
-                    print(f"{result}")
+                    sys.stdout.write(f"{result}\n")
                     sys.stdout.write("Enter command: ")
                     sys.stdout.flush()
 
@@ -49,18 +49,18 @@ def chat_client():
                         "CREATE") or msg.startswith("SAY") or msg.startswith("CHANNELS"):
                     data = msg.encode("utf-8")
                     data_header = f"{len(data):<{HEADER_LENGTH}}".encode("utf-8")
-                    client_socket.send(data_header + data)
+                    client_socket.send(data)
 
                 else:
                     msg = msg.encode("utf-8")
                     msg_header = f"{len(msg):<{HEADER_LENGTH}}".encode("utf-8")
-                    client_socket.send(msg_header + msg)
-                sys.stdout.write("Enter command: ")
+                    client_socket.send(msg)
+                #sys.stdout.write("Enter command: ")
                 sys.stdout.flush()
 
 
 if __name__ == "__main__":
-    sys.exit(chat_client())
+    chat_client()
 
 # while True:
 #     message = input(f"{my_username} > ")
