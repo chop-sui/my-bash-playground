@@ -10,6 +10,11 @@ daemon_quit = False
 
 HEADER_LENGTH = 2048
 IP = "127.0.0.1"
+sockets_list = []
+clients = {}  # key: client_socket, value: client_address
+online_clients_username = {}  # key: client_address, value: client username
+accounts_db = {}
+channels = {}  # key: channel name, value: list of clients
 
 """
 AF_INET: address domain of the socket
@@ -17,11 +22,6 @@ SOCK_STREAM: type of socket, SOCK_STREAM means that data or characters are read 
 """
 server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-sockets_list = []
-clients = {}  # key: client_socket, value: client_address
-online_clients_username = {}  # key: client_address, value: client username
-accounts_db = {"john": "23423"}
-channels = {}  # key: channel name, value: list of clients
 
 
 # Do not modify or remove this handler
@@ -89,7 +89,7 @@ def run():
                         print(f"Closed connection from {clients[notified_socket][0]}:{clients[notified_socket][1]}")
                         sockets_list.remove(notified_socket)
                         del clients[notified_socket]
-                        broadcast(server_socket, notified_socket, f"Client {client_address[0]}:{client_address[1]} is offline".encode("utf-8"))
+                        # broadcast(server_socket, notified_socket, f"Client {client_address[0]}:{client_address[1]} is offline".encode("utf-8"))
                         continue
 
                     received_msg = received_msg['data']
@@ -195,6 +195,7 @@ def run():
                         else:
                             result_msg = f"RECV {username} {channel} {message}".encode("utf-8")
                             notified_socket.send(result_msg)
+                            broadcast(server_socket, notified_socket, result_msg)
 
                     elif received_msg[:received_msg.find(' ')] == "CHANNELS":
                         channels_str = ""
@@ -212,7 +213,7 @@ def run():
                         notified_socket.send(result_msg)
 
                 except Exception as e:
-                    broadcast(server_socket, notified_socket, f"Client {client_address[0]}:{client_address[1]} is offline".encode("utf-8"))
+                    # broadcast(server_socket, notified_socket, f"Client {client_address[0]}:{client_address[1]} is offline".encode("utf-8"))
                     continue
 
 
