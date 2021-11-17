@@ -61,37 +61,3 @@ def chat_client():
 
 if __name__ == "__main__":
     chat_client()
-
-# while True:
-#     message = input(f"{my_username} > ")
-#
-#     if message:
-#         message = message.encode("utf-8")
-#         message_header = f"{len(message):<{HEADER_LENGTH}}".encode("utf-8")
-#         client_socket.send(message_header + message)
-#
-#     try:
-#         # Keep attempting to receive any incoming messages
-#         while True:
-#             username_header = client_socket.recv(HEADER_LENGTH)
-#             if not len(username_header):
-#                 print("Connection closed by the server")
-#                 sys.exit()
-#
-#             username_length = int(username_header.decode("utf-8").strip())
-#             username = client_socket.recv(username_length).decode("utf-8")
-#
-#             message_header = client_socket.recv(HEADER_LENGTH)
-#             message_length = int(message_header.decode("utf-8").strip())
-#             message = client_socket.recv(message_length).decode("utf-8")
-#
-#             print(f"{username} > {message}")
-#
-#     except IOError as e:
-#         if e.errno != errno.EAGAIN and e.errno != errno.EWOULDBLOCK:
-#             print('Reading error', str(e))
-#         continue
-#
-#     except Exception as e:
-#         print('General error', str(e))
-#         sys.exit()
