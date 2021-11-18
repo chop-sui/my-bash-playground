@@ -1,18 +1,25 @@
 import socket
 import select
-import errno
 import sys
 import msvcrt
+import json
 
+clientside_test_result = {
+    "tc1_can_connect_to_server": False,
+    "tc2_can_get_message_from_server": False,
+    "tc3_can_send_message_to_server": False,
+}
 HEADER_LENGTH = 2048
 IP = "127.0.0.1"
-PORT = 1234
+# PORT = 1234
 
 
 def chat_client():
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client_socket.connect((IP, PORT))
+    client_socket.connect((IP, int(sys.argv[1])))
 
+    clientside_test_result["tc1_can_connect_to_server"] = True
+    write_json()
     print("Connected to server!")
     sys.stdout.write("Enter command: ")
     sys.stdout.flush()
@@ -32,9 +39,11 @@ def chat_client():
                 result_header = client_socket.recv(HEADER_LENGTH)
                 if not len(result_header):
                     print("Connection closed by the server")
+                    write_json()
                     sys.exit()
                 else:
-                    # result_length = int(result_header.decode("utf-8").strip())
+                    clientside_test_result["tc2_can_get_message_from_server"] = True
+                    write_json()
                     result = result_header.decode("utf-8")
 
                     sys.stdout.write(f"{result}\n")
@@ -48,16 +57,21 @@ def chat_client():
                 if msg.startswith("LOGIN") or msg.startswith("REGISTER") or msg.startswith("JOIN") or msg.startswith(
                         "CREATE") or msg.startswith("SAY") or msg.startswith("CHANNELS"):
                     data = msg.encode("utf-8")
-                    data_header = f"{len(data):<{HEADER_LENGTH}}".encode("utf-8")
                     client_socket.send(data)
 
                 else:
                     msg = msg.encode("utf-8")
-                    msg_header = f"{len(msg):<{HEADER_LENGTH}}".encode("utf-8")
                     client_socket.send(msg)
-                #sys.stdout.write("Enter command: ")
+                clientside_test_result["tc3_can_send_message_to_server"] = True
+                write_json()
                 sys.stdout.flush()
+
+
+def write_json():
+    with open('clientside_testcase_result.txt', 'w') as f:
+        json.dump(clientside_test_result, f)
 
 
 if __name__ == "__main__":
     chat_client()
+

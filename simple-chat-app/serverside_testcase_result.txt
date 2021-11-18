@@ -1,0 +1,1 @@
+{"tc1_can_connect_to_client": true, "tc2_can_REGISTER_user": true, "tc3_can_LOGIN_user": true, "tc4_can_JOIN_user": true, "tc5_can_SAY_on_channel": true, "tc6_can_CREATE_channel": true, "tc7_can_give_channels_list": true, "tc8_can_federate_with_other_servers": true, "tc9_can_receive_FEDCHANNELS": true, "tc10_can_receive_FEDNEW": true}

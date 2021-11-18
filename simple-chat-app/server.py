@@ -1,9 +1,23 @@
 #!/bin/python
 import hashlib
+import json
 import select
 import signal
 import sys
 import socket
+
+serverside_test_result = {
+    "tc1_can_connect_to_client": False,
+    "tc2_can_REGISTER_user": False,
+    "tc3_can_LOGIN_user": False,
+    "tc4_can_JOIN_user": False,
+    "tc5_can_SAY_on_channel": False,
+    "tc6_can_CREATE_channel": False,
+    "tc7_can_give_channels_list": False,
+    "tc8_can_federate_with_other_servers": False,
+    "tc9_can_receive_FEDCHANNELS": False,
+    "tc10_can_receive_FEDNEW": False,
+}
 
 # Use this variable for your loop
 daemon_quit = False
@@ -15,6 +29,9 @@ clients = {}  # key: client_socket, value: client_address
 online_clients_username = {}  # key: client_address, value: client username
 accounts_db = {}
 channels = {}  # key: channel name, value: list of clients
+
+fed_servers_possible_addr = []
+fed_servers_connected_sockets = []
 
 """
 AF_INET: address domain of the socket
@@ -60,25 +77,60 @@ def receive_message(client_socket):
 def run():
     # Do not modify or remove this function call
     signal.signal(signal.SIGINT, quit_gracefully)
-
     if len(sys.argv) > 3:
         print("Wrong usage. Use script [port number] [configuration]")
         exit()
+    # handle the config file if it exists
+
+    try:
+        if sys.argv[2] is not None:
+            with open(sys.argv[2], 'r') as f:
+                while True:
+                    line = f.readline()
+                    if not line: break
+                    fed_servers_possible_addr.append(line)
+            f.close()
+    except:
+        pass
+
+    fed_server_sockets = {}  # key: fed_server_addr, value: fed_server_socket
+    for server in fed_servers_possible_addr:
+        fed_server_sockets[server] = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        ip = server.split(':')[0]
+        port = server.split(':')[1]
+
+        fed_server_sockets[server].connect((ip, int(port)))
+        sockets_list.append(fed_server_sockets[server])
+        msg = "FEDERATE-OUT"
+        data = msg.encode("utf-8")
+        fed_server_sockets[server].send(data)
+        print(f"Federated with server {server}")
 
     setup_socket(int(sys.argv[1]))
 
     while True:
         ready_to_read, ready_to_write, in_error = select.select(sockets_list, [], [], 0)
-
         for notified_socket in ready_to_read:
+            if notified_socket in fed_server_sockets.values():
+                result = notified_socket.recv(HEADER_LENGTH)
+                if not len(result):
+                    print("Connection closed by the server")
+                    sys.exit()
+                else:
+                    result = result.decode("utf-8")
+
+                    print(f"{result}\n")
+
             # If a connection request is received
-            if notified_socket == server_socket:
+            elif notified_socket == server_socket:
                 client_socket, client_address = server_socket.accept()
                 sockets_list.append(client_socket)
                 clients[client_socket] = client_address
                 # At this point, the user has not logged in nor registered. So, just let username be client_address
                 online_clients_username[client_address] = client_address
                 print(f"Accepted new connection from client {client_address[0]}:{client_address[1]}")
+                serverside_test_result["tc1_can_connect_to_client"] = True
+                write_json()
 
             # If a message is received from a client, not a new connection
             else:
@@ -121,10 +173,13 @@ def run():
                                     result_msg = "RESULT LOGIN 1\n".encode("utf-8")
                                     notified_socket.send(result_msg)
                                     print(f"Client {username} logged in")
+                                    serverside_test_result["tc3_can_LOGIN_user"] = True
+                                    write_json()
                             else:
                                 result_msg = "RESULT LOGIN 0\n".encode("utf-8")
                                 notified_socket.send(result_msg)
                                 print(f"Client {username} failed to log in")
+
 
                     elif received_msg.split(' ')[0].startswith("REGISTER"):
                         username = received_msg.split(' ')[1]
@@ -142,6 +197,8 @@ def run():
                             result_msg = "RESULT REGISTER 1\n".encode("utf-8")
                             notified_socket.send(result_msg)
                             print(f"New client {username} registered")
+                            serverside_test_result["tc2_can_REGISTER_user"] = True
+                            write_json()
 
                     elif received_msg.split(' ')[0].startswith("JOIN"):
                         channel = received_msg.split(' ')[1].strip()
@@ -166,6 +223,8 @@ def run():
                                 result_msg = f"RESULT JOIN {channel} 1\n".encode("utf-8")
                                 notified_socket.send(result_msg)
                                 print(f"Client {username} has joined channel {channel}.")
+                                serverside_test_result["tc4_can_JOIN_user"] = True
+                                write_json()
 
                     elif received_msg.split(' ')[0].startswith("CREATE"):
                         channel = received_msg.split(' ')[1].strip()
@@ -181,6 +240,14 @@ def run():
                             result_msg = f"RESULT CREATE {channel} 1\n".encode("utf-8")
                             notified_socket.send(result_msg)
                             print(f"Client {username} created channel {channel}.")
+                            serverside_test_result["tc6_can_CREATE_channel"] = True
+                            write_json()
+
+                            # Inform other servers that a new channel has been created.
+                            result_msg = f"FEDNEW {channel}\n".encode("utf-8")
+                            broadcast_to_fed_servers(server_socket, result_msg)
+                            serverside_test_result["tc10_can_receive_FEDNEW"] = True
+                            write_json()
 
                     elif received_msg.split(' ')[0].startswith("SAY"):
                         channel = received_msg.split(' ')[1]
@@ -196,6 +263,8 @@ def run():
                             result_msg = f"RECV {username} {channel} {message}".encode("utf-8")
                             notified_socket.send(result_msg)
                             broadcast(server_socket, notified_socket, result_msg)
+                            serverside_test_result["tc5_can_SAY_on_channel"] = True
+                            write_json()
 
                     elif received_msg[:received_msg.find(' ')] == "CHANNELS":
                         channels_str = ""
@@ -206,6 +275,74 @@ def run():
                             channels_str = channels_str[:-1]
                         result_msg = f"RESULT CHANNELS {channels_str}\n".encode("utf-8")
                         notified_socket.send(result_msg)
+                        serverside_test_result["tc7_can_give_channels_list"] = True
+                        write_json()
+
+                    elif received_msg == "FEDERATE-OUT":
+                        channels_str = ""
+                        for key in sorted(channels.keys()):
+                            channels_str += key + ", "
+                        channels_str = channels_str.strip()
+                        if channels_str.endswith(','):
+                            channels_str = channels_str[:-1]
+
+                        # officially connected by receiving FEDERATE-OUT
+                        fed_servers_connected_sockets.append(notified_socket)
+
+                        result_msg = "FEDERATE-CONFIRM\n".encode("utf-8")
+                        notified_socket.send(result_msg)
+                        serverside_test_result["tc8_can_federate_with_other_servers"] = True
+                        write_json()
+
+                        result_msg = f"FEDCHANNELS {channels_str}\n".encode("utf-8")
+                        broadcast_to_fed_servers(server_socket, result_msg)
+                        serverside_test_result["tc9_can_receive_FEDCHANNELS"] = True
+                        write_json()
+
+                    elif received_msg == "FEDERATE-CONFIRM":
+                        print(f"Federate confirmed from {client_address[0]}:{client_address[1]}")
+
+                    elif received_msg.split(' ')[0].startswith("FEDCHANNELS"):
+                        print(received_msg)
+
+                    elif received_msg.split(' ')[0].startswith("FEDJOIN"):
+                        username = received_msg.split(' ')[1]
+                        channel = received_msg.split(' ')[2]
+
+                        # If channel doesn't exist
+                        if channel not in channels:
+                            result_msg = f"FEDRESULT {username} JOIN {channel} 0\n".encode("utf-8")
+                            notified_socket.send(result_msg)
+                            print(f"Channel {channel} does not exist.")
+
+                        # If channel exists
+                        else:
+                            # If user is already in the channel
+                            if clients[notified_socket] in channels[channel]:
+                                result_msg = f"FEDRESULT {username} JOIN {channel} 0\n".encode("utf-8")
+                                notified_socket.send(result_msg)
+                                print(f"Client {username} is already in channel {channel}")
+                            else:
+                                # Let client join the channel
+                                channels[channel].append(clients[notified_socket])
+                                result_msg = f"FEDRESULT {username} JOIN {channel} 1\n".encode("utf-8")
+                                notified_socket.send(result_msg)
+                                print(f"Client {username} has joined channel {channel}.")
+
+                    elif received_msg.split(' ')[0].startswith("FEDSAY"):
+                        username = received_msg.split(' ')[1]
+                        channel = received_msg.split(' ')[2]
+                        message = received_msg[find_nth(received_msg, ' ', 3) + 1:]
+
+                        # If user is not in the channel
+                        if clients[notified_socket] not in channels[channel]:
+                            result_msg = f"FEDRESULT {username} SAY {channel} 0\n".encode("utf-8")
+                            notified_socket.send(result_msg)
+                            print(f"Client {username} failed to join channel {channel}.")
+                        else:
+                            result_msg = f"FEDRECV {username} {channel} {message}".encode("utf-8")
+                            notified_socket.send(result_msg)
+                            broadcast(server_socket, notified_socket, result_msg)
 
                     # Handle any other type of messages sent from client
                     else:
@@ -229,10 +366,24 @@ def broadcast(server_sock, sock, message):
                     sockets_list.remove(s)
 
 
+def broadcast_to_fed_servers(server_sock, message):
+    for s in fed_servers_connected_sockets:
+        if s != server_sock:
+            try:
+                s.send(message)
+            except:
+                s.close()
+
+
+def write_json():
+    with open('serverside_testcase_result.txt', 'w') as f:
+        json.dump(serverside_test_result, f)
+
+
 def find_nth(word, substring, n):
     start = word.find(substring)
     while start >= 0 and n > 1:
-        start = word.find(substring, start+len(substring))
+        start = word.find(substring, start + len(substring))
         n -= 1
     return start
 

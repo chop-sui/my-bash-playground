@@ -1,0 +1,1 @@
+{"tc1_can_connect_to_server": true, "tc2_can_get_message_from_server": true, "tc3_can_send_message_to_server": true}
